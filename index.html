@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>命盘草图工具</title>
+<style>
+  :root {
+    --lu:   #1E9E4E;  /* 禄 · 绿 */
+    --quan: #7B1FA2;  /* 权 · 紫 */
+    --ke:   #1976D2;  /* 科 · 蓝 */
+    --ji:   #D32F2F;  /* 忌 · 红 */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: #f5f5f7; color: #333;
+    display: flex; flex-direction: column; align-items: center; padding: 16px;
+  }
+  h1 { font-size: 18px; margin: 0 0 12px; font-weight: 600; }
+  #toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .color-btn {
+    display: flex; align-items: center; gap: 6px; padding: 7px 14px;
+    border: 2px solid #ddd; border-radius: 8px; background: #fff;
+    cursor: pointer; font-size: 15px; transition: all .15s;
+  }
+  .color-btn .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+  .color-btn.active { border-color: #333; box-shadow: 0 0 0 2px rgba(0,0,0,.08); }
+  .tool-btn { padding: 7px 14px; border: 2px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; font-size: 15px; }
+  .tool-btn:hover { border-color: #999; }
+  .tool-btn.primary { background: #1976D2; color: #fff; border-color: #1976D2; }
+  .tool-btn.primary:hover { background: #1565C0; }
+  .hint { font-size: 12px; color: #999; margin-left: 4px; }
+  #board-wrap {
+    background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.08); width: min(800px, 92vw);
+  }
+  svg { display: block; width: 100%; height: auto; touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #panel-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    z-index: 10; align-items: center; justify-content: center;
+  }
+  #panel-mask.show { display: flex; }
+  #panel {
+    background: #fff; border-radius: 12px; padding: 20px 24px;
+    width: 320px; box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  }
+  #panel h2 { font-size: 16px; margin: 0 0 16px; font-weight: 600; }
+  #panel .field { margin-bottom: 12px; }
+  #panel label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+  #panel input, #panel select {
+    width: 100%; padding: 8px 10px; font-size: 15px;
+    border: 1px solid #ccc; border-radius: 6px; background: #fff;
+  }
+  #panel .btns { display: flex; gap: 8px; margin-top: 16px; }
+  #panel .btns button {
+    flex: 1; padding: 9px; border: 1px solid #ddd; border-radius: 8px;
+    background: #f7f7f7; cursor: pointer; font-size: 14px;
+  }
+  #panel .btns button.ok { background: #1976D2; color: #fff; border-color: #1976D2; }
+  #panel .btns button.clear { color: #D32F2F; }
+  #panel .row { display: flex; align-items: center; gap: 8px; }
+  #panel .row input { flex: 1; }
+  #panel .laiyin { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #666; white-space: nowrap; margin-bottom: 0; cursor: pointer; }
+  #panel .laiyin input { width: auto; margin: 0; }
+
+  #export-mask {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 20;
+    align-items: center;
+    justify-content: center;
+  }
+  #export-mask.show { display: flex; }
+  #export-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 92vw;
+    max-height: 92vh;
+    overflow: auto;
+    text-align: center;
+  }
+  #export-box img { max-width: 100%; max-height: 70vh; display: block; }
+  #export-box p { font-size: 14px; color: #555; margin: 12px 0; }
+  #export-box button { padding: 8px 24px; font-size: 15px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>命盘草图工具</h1>
+
+<div id="toolbar">
+  <button class="color-btn active" data-color="lu"><span class="dot" style="background:var(--lu)"></span>禄</button>
+  <button class="color-btn" data-color="quan"><span class="dot" style="background:var(--quan)"></span>权</button>
+  <button class="color-btn" data-color="ke"><span class="dot" style="background:var(--ke)"></span>科</button>
+  <button class="color-btn" data-color="ji"><span class="dot" style="background:var(--ji)"></span>忌</button>
+  <span style="width:10px"></span>
+  <button class="tool-btn" id="btn-undo">撤销</button>
+  <button class="tool-btn" id="btn-delete">删除选中线</button>
+  <button class="tool-btn" id="btn-clear">清空</button>
+  <button class="tool-btn primary" id="btn-export">导出图片</button>
+  <button class="tool-btn" id="btn-download">下载图片</button>
+  <span class="hint">点击宫格填字 · 从宫格拖拽画线 · 点线选中后可删（右键/Delete 也可）</span>
+</div>
+
+<div id="board-wrap">
+  <svg id="board" viewBox="0 0 800 800" width="800" height="800"></svg>
+</div>
+
+<div id="panel-mask">
+  <div id="panel">
+    <h2>宫格输入 · <span id="panel-branch"></span>宫</h2>
+    <div class="field">
+      <label>天干（地支上方，1 字，可空）</label>
+      <select id="in-gan"></select>
+    </div>
+    <div class="field">
+      <label>宫位名（底部中央，逗号分隔，最多三层，可空）</label>
+      <div class="row">
+        <input id="in-ming" maxlength="30" placeholder="如：本命、大限、流年">
+        <label class="laiyin"><input type="checkbox" id="in-laiyin"> 来因宫</label>
+      </div>
+    </div>
+    <div class="field">
+      <label>星曜名（左上角竖排，≤2 字，可空）</label>
+      <input id="in-xing" maxlength="50" placeholder="如：紫微、天府">
+    </div>
+    <div class="field">
+      <label>四化（对应各星曜，逗号分隔，空格跳过，可空）</label>
+      <input id="in-hua" maxlength="50" placeholder="如：禄、 、忌">
+    </div>
+    <div class="btns">
+      <button class="clear" id="btn-clear-gong">清空本宫</button>
+      <button id="btn-cancel">取消</button>
+      <button class="ok" id="btn-ok">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导出图片浮层 -->
+<div id="export-mask">
+  <div id="export-box">
+    <img id="export-img" alt="命盘草图">
+    <p>长按图片，选择「存储图像」保存到相册；也可以直接截图</p>
+    <button id="export-close">关闭</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============ 常量 ============ */
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const FONT_FAMILY = '"PingFang SC","Hiragino Sans GB",sans-serif';
+  const FONT = 17;                    // 所有文字统一字号（加粗20%）
+  const GAP = 10;                     // 多条线间距（缩小）
+
+  const COLORS = {
+    lu:   { name: '禄', hex: '#1E9E4E' },
+    quan: { name: '权', hex: '#7B1FA2' },
+    ke:   { name: '科', hex: '#1976D2' },
+    ji:   { name: '忌', hex: '#D32F2F' }
+  };
+
+  const MARGIN = 100, CELL = 150, SIZE = CELL * 4;
+  const gridX = c => MARGIN + c * CELL;
+  const gridY = r => MARGIN + r * CELL;
+  const centerX = c => MARGIN + c * CELL + CELL / 2;
+  const centerY = r => MARGIN + r * CELL + CELL / 2;
+  const CENTER = centerX(1.5);
+
+  const BRANCH = {
+    '0,0': '巳', '0,1': '午', '0,2': '未', '0,3': '申',
+    '1,3': '酉', '2,3': '戌',
+    '3,3': '亥', '3,2': '子', '3,1': '丑', '3,0': '寅',
+    '2,0': '卯', '1,0': '辰'
+  };
+  const TIAN_GAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
+  const YANG_GAN = ['甲', '丙', '戊', '庚', '壬'];
+  const YIN_GAN = ['乙', '丁', '己', '辛', '癸'];
+  const YANG_ZHI = new Set(['子', '寅', '辰', '午', '申', '戌']);
+  const DI_ZHI_ORDER = ['寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑'];
+
+  /* ============ 状态 ============ */
+  let state = {
+    lines: [],
+    texts: {},
+    nextId: 1
+  };
+  let undoStack = [];
+  let currentColor = 'lu';
+  let selectedLineId = null;
+
+  // 地支阴阳：阳支配阳干、阴支配阴干（子寅辰午申戌为阳支，丑卯巳未酉亥为阴支）
+  function ganOptions(z) {
+    return YANG_ZHI.has(z) ? YANG_GAN : YIN_GAN;
+  }
+  // 天干排布：地支从寅起顺行，天干十干循环（五虎遁本质），任一宫天干可反推全部 12 宫
+  function applyTianGan(fromKey, gan) {
+    const z = BRANCH[fromKey];
+    const i = DI_ZHI_ORDER.indexOf(z);
+    const j = TIAN_GAN.indexOf(gan);
+    if (i < 0 || j < 0) return;
+    const ganByDz = {};
+    DI_ZHI_ORDER.forEach((dz, k) => { ganByDz[dz] = TIAN_GAN[((j - i + k) % 10 + 10) % 10]; });
+    for (const key in BRANCH) {
+      if (!state.texts[key]) state.texts[key] = {};
+      state.texts[key].tianGan = ganByDz[BRANCH[key]];
+    }
+  }
+  function clearTianGanAll() {
+    for (const key in state.texts) {
+      delete state.texts[key].tianGan;
+      if (!state.texts[key].gongMing && !state.texts[key].xingYao && !state.texts[key].siHua && !state.texts[key].laiYin) {
+        delete state.texts[key];
+      }
+    }
+  }
+
+  const svg = document.getElementById('board');
+  const linesLayer = document.createElementNS(SVG_NS, 'g');
+  const textsLayer = document.createElementNS(SVG_NS, 'g');
+  const previewLayer = document.createElementNS(SVG_NS, 'g');
+
+  function snapshot() { return JSON.parse(JSON.stringify({ lines: state.lines, texts: state.texts })); }
+  function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift(); }
+  function undo() {
+    const prev = undoStack.pop();
+    if (!prev) return;
+    state.lines = prev.lines; state.texts = prev.texts;
+    selectedLineId = null; render();
+  }
+
+  function makeEl(tag, attrs) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  /* ============ 宫位方位 ============ */
+  function palaceType(r, c) {
+    if (r === 3 && (c === 1 || c === 2)) return 'bottom';
+    if (r === 0 && (c === 1 || c === 2)) return 'top';
+    if ((r === 2 || r === 1) && c === 0) return 'left';
+    if ((r === 1 || r === 2) && c === 3) return 'right';
+    return 'corner';
+  }
+  function cornerInfo(r, c, dir) {
+    const gx = gridX(c), gy = gridY(r);
+    const isOut = (dir === 'out');
+    let cx, cy, u1, u2;
+    if (r === 0 && c === 0) {
+      if (isOut) { cx = gx + CELL; cy = gy + CELL; u1 = [-1, 0]; u2 = [0, -1]; }
+      else       { cx = gx;       cy = gy;       u1 = [ 1, 0]; u2 = [0,  1]; }
+    } else if (r === 0 && c === 3) {
+      if (isOut) { cx = gx;       cy = gy + CELL; u1 = [ 1, 0]; u2 = [0, -1]; }
+      else       { cx = gx + CELL; cy = gy;       u1 = [-1, 0]; u2 = [0,  1]; }
+    } else if (r === 3 && c === 3) {
+      if (isOut) { cx = gx;       cy = gy;       u1 = [ 1, 0]; u2 = [0,  1]; }
+      else       { cx = gx + CELL; cy = gy + CELL; u1 = [-1, 0]; u2 = [0, -1]; }
+    } else {
+      if (isOut) { cx = gx + CELL; cy = gy;       u1 = [-1, 0]; u2 = [0,  1]; }
+      else       { cx = gx;       cy = gy + CELL; u1 = [ 1, 0]; u2 = [0, -1]; }
+    }
+    return { c: [cx, cy], u1, u2 };
+  }
+  function outAnchors(r, c) {
+    const gx = gridX(c), gy = gridY(r);
+    const t = palaceType(r, c);
+    if (t === 'bottom') return { kind: 'edge', p0: [gx, gy], p1: [gx + CELL, gy] };
+    if (t === 'top')    return { kind: 'edge', p0: [gx, gy + CELL], p1: [gx + CELL, gy + CELL] };
+    if (t === 'left')   return { kind: 'edge', p0: [gx + CELL, gy], p1: [gx + CELL, gy + CELL] };
+    if (t === 'right')  return { kind: 'edge', p0: [gx, gy], p1: [gx, gy + CELL] };
+    return { kind: 'corner', ...cornerInfo(r, c, 'out') };
+  }
+  function inAnchors(r, c) {
+    const gx = gridX(c), gy = gridY(r);
+    const t = palaceType(r, c);
+    if (t === 'bottom') return { kind: 'edge', p0: [gx, gy + CELL], p1: [gx + CELL, gy + CELL] };
+    if (t === 'top')    return { kind: 'edge', p0: [gx, gy], p1: [gx + CELL, gy] };
+    if (t === 'left')   return { kind: 'edge', p0: [gx, gy], p1: [gx, gy + CELL] };
+    if (t === 'right')  return { kind: 'edge', p0: [gx + CELL, gy], p1: [gx + CELL, gy + CELL] };
+    return { kind: 'corner', ...cornerInfo(r, c, 'in') };
+  }
+
+  function basePoint(a) {
+    if (a.kind === 'edge') return [(a.p0[0] + a.p1[0]) / 2, (a.p0[1] + a.p1[1]) / 2];
+    return [a.c[0], a.c[1]];
+  }
+  // 边：沿边方向均匀分布（贴边）
+  function distributeEdge(a, n, index) {
+    const [x0, y0] = a.p0, [x1, y1] = a.p1;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+    const off = (index - (n - 1) / 2) * GAP;
+    return [mx + ux * off, my + uy * off];
+  }
+  // 角：沿两条邻边分布（贴边，不悬空）
+  function distributeCornerOnEdges(a, n, index) {
+    const [cx, cy] = a.c;
+    if (n === 1) return [cx, cy];
+    const isOdd = (n % 2 === 1);
+    if (isOdd && index === 0) return [cx, cy];
+    const pi = isOdd ? index - 1 : index;
+    const which = pi % 2;
+    const k = Math.floor(pi / 2) + 1;
+    const u = which === 0 ? a.u1 : a.u2;
+    return [cx + u[0] * GAP * k, cy + u[1] * GAP * k];
+  }
+  function anchorCenter(r, c, dir) {
+    return basePoint(dir === 'out' ? outAnchors(r, c) : inAnchors(r, c));
+  }
+  // 角宫对宫线偏移：按绘制顺序对称展开——第1条顶点(0)，第2条+1，第3条-1，第4条+2，第5条-2…（不论方向）
+  function cornerOppOffset(group, line) {
+    const idx = group.indexOf(line);
+    if (idx === 0) return 0;
+    const pi = idx - 1;
+    const mag = Math.floor(pi / 2) + 1;
+    const sign = (pi % 2 === 0) ? 1 : -1;
+    return sign * mag;
+  }
+  // 向外方向 = 平行于对宫指向本宫的线（本宫中心 - 对宫中心）
+  function outwardDir(r, c) {
+    const oppR = 3 - r, oppC = 3 - c;
+    const dx = centerX(c) - centerX(oppC);
+    const dy = centerY(r) - centerY(oppR);
+    const l = Math.hypot(dx, dy) || 1;
+    return [dx / l, dy / l];
+  }
+
+  /* ============ 初始化 ============ */
+  function initBoard() {
+    const L = MARGIN, R = MARGIN + SIZE;
+    const m1 = MARGIN + CELL, m2 = MARGIN + CELL * 2, m3 = MARGIN + CELL * 3;
+
+    svg.appendChild(makeEl('rect', { x: L, y: L, width: SIZE, height: SIZE, fill: 'none', stroke: '#333', 'stroke-width': 2.4 }));
+    [m1, m3].forEach(y => svg.appendChild(makeEl('line', { x1: L, y1: y, x2: R, y2: y, stroke: '#333', 'stroke-width': 1.8 })));
+    svg.appendChild(makeEl('line', { x1: L, y1: m2, x2: m1, y2: m2, stroke: '#333', 'stroke-width': 1.8 }));
+    svg.appendChild(makeEl('line', { x1: m3, y1: m2, x2: R, y2: m2, stroke: '#333', 'stroke-width': 1.8 }));
+    [m1, m3].forEach(x => svg.appendChild(makeEl('line', { x1: x, y1: L, x2: x, y2: R, stroke: '#333', 'stroke-width': 1.8 })));
+    svg.appendChild(makeEl('line', { x1: m2, y1: L, x2: m2, y2: m1, stroke: '#333', 'stroke-width': 1.8 }));
+    svg.appendChild(makeEl('line', { x1: m2, y1: m3, x2: m2, y2: R, stroke: '#333', 'stroke-width': 1.8 }));
+
+    for (const key in BRANCH) {
+      const [r, c] = key.split(',').map(Number);
+      svg.appendChild(makeEl('text', {
+        x: gridX(c) + 6, y: gridY(r) + 144,
+        'font-size': FONT, 'font-weight': 'bold',
+        fill: '#333', 'text-anchor': 'start', 'font-family': FONT_FAMILY
+      })).textContent = BRANCH[key];
+    }
+
+    const defs = makeEl('defs');
+    for (const k in COLORS) {
+      const m = makeEl('marker', {
+        id: 'arrow-' + k, viewBox: '0 0 10 10',
+        refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto'
+      });
+      m.appendChild(makeEl('path', { d: 'M0,0 L10,5 L0,10 z', fill: COLORS[k].hex }));
+      defs.appendChild(m);
+    }
+    svg.appendChild(defs);
+    svg.appendChild(linesLayer);
+    svg.appendChild(textsLayer);
+    svg.appendChild(previewLayer);
+  }
+
+  /* ============ 渲染 ============ */
+  function render() {
+    while (linesLayer.firstChild) linesLayer.removeChild(linesLayer.firstChild);
+    while (textsLayer.firstChild) textsLayer.removeChild(textsLayer.firstChild);
+
+    const outBy = {}, inBy = {}, recvBy = {};
+    state.lines.forEach(line => {
+      const fk = line.from[0] + ',' + line.from[1];
+      if (line.toType === 'palace') {
+        (outBy[fk] = outBy[fk] || []).push(line);
+        const tk = line.toPalace[0] + ',' + line.toPalace[1];
+        (recvBy[tk] = recvBy[tk] || []).push(line);
+      } else {
+        (inBy[fk] = inBy[fk] || []).push(line);
+      }
+    });
+
+    // 对宫线分组（一对对宫的所有互指线作为一个整体统一分布）
+    const oppPairs = {};
+    state.lines.forEach(line => {
+      if (line.toType !== 'palace' || !line.toPalace) return;
+      const [f2r, f2c] = line.from, [t2r, t2c] = line.toPalace;
+      if (t2r === 3 - f2r && t2c === 3 - f2c) {
+        const a = f2r * 4 + f2c, b = t2r * 4 + t2c;
+        const key = a < b ? a + '_' + b : b + '_' + a;
+        (oppPairs[key] = oppPairs[key] || []).push(line);
+      }
+    });
+
+    // 角宫向外线：统一延伸距离（终点对齐）已废弃，改用固定长度 45 度方向
+
+
+    state.lines.forEach(line => {
+      const [fr, fc] = line.from;
+      const fk = fr + ',' + fc;
+      let sx, sy, ex, ey, kind;
+
+      if (line.toType === 'palace') {
+        const [tr, tc] = line.toPalace;
+        const tk = tr + ',' + tc;
+        const outGroup = outBy[fk];
+        const recvGroup = recvBy[tk];
+        const outIdx = outGroup.indexOf(line);
+        let recvIdx = recvGroup.indexOf(line);
+        const fromA = outAnchors(fr, fc);
+        const toA = outAnchors(tr, tc);
+        const isOpp = (tr === 3 - fr && tc === 3 - fc);
+        kind = isOpp ? 'line' : 'curve';
+
+        if (isOpp) {
+          // 对宫线：起终点都用对宫对整组序号，保证平行、不重合、贴边
+          const a = fr * 4 + fc, b = tr * 4 + tc;
+          const key = a < b ? a + '_' + b : b + '_' + a;
+          const group = oppPairs[key];
+          const gIdx = group.indexOf(line);
+          if (fromA.kind === 'corner') {
+            // 角↔角：第1条顶点↔顶点；其后按绘制顺序对称展开，正反方向组合互换保证平行、对称、不重合
+            const delta = cornerOppOffset(group, line);
+            if (delta === 0) {
+              sx = fromA.c[0]; sy = fromA.c[1];
+              ex = toA.c[0]; ey = toA.c[1];
+            } else {
+              const k = Math.abs(delta) * GAP;
+              const useA = (delta > 0) === (a < b);
+              if (useA) {
+                sx = fromA.c[0] + fromA.u1[0] * k; sy = fromA.c[1] + fromA.u1[1] * k;
+                ex = toA.c[0] + toA.u2[0] * k; ey = toA.c[1] + toA.u2[1] * k;
+              } else {
+                sx = fromA.c[0] + fromA.u2[0] * k; sy = fromA.c[1] + fromA.u2[1] * k;
+                ex = toA.c[0] + toA.u1[0] * k; ey = toA.c[1] + toA.u1[1] * k;
+              }
+            }
+          } else {
+            [sx, sy] = distributeEdge(fromA, group.length, gIdx);
+            [ex, ey] = distributeEdge(toA, group.length, gIdx);
+          }
+        } else {
+          // 非对宫：起点按该宫出线分布，终点按接收线分布
+          if (fromA.kind === 'corner') [sx, sy] = distributeCornerOnEdges(fromA, outGroup.length, outIdx);
+          else [sx, sy] = distributeEdge(fromA, outGroup.length, outIdx);
+          if (toA.kind === 'corner') [ex, ey] = distributeCornerOnEdges(toA, recvGroup.length, recvIdx);
+          else [ex, ey] = distributeEdge(toA, recvGroup.length, recvIdx);
+        }
+      } else {
+        const inGroup = inBy[fk];
+        const inIdx = inGroup.indexOf(line);
+        const fromA = inAnchors(fr, fc);
+        if (fromA.kind === 'corner') [sx, sy] = distributeCornerOnEdges(fromA, inGroup.length, inIdx);
+        else [sx, sy] = distributeEdge(fromA, inGroup.length, inIdx);
+        const [dx, dy] = outwardDir(fr, fc);
+        const FIXED = 30;
+        ex = sx + dx * FIXED; ey = sy + dy * FIXED;
+        kind = 'line';
+      }
+
+      const d = kind === 'curve'
+        ? `M ${sx} ${sy} Q ${CENTER} ${CENTER} ${ex} ${ey}`
+        : `M ${sx} ${sy} L ${ex} ${ey}`;
+
+      const color = COLORS[line.color].hex;
+      const isSel = (line.id === selectedLineId);
+      const g = makeEl('g', {});
+
+      const hit = makeEl('path', {
+        d: d, fill: 'none', stroke: '#000', 'stroke-opacity': '0',
+        'stroke-width': 19, 'pointer-events': 'all'
+      });
+      hit.addEventListener('click', () => selectLine(line.id));
+      hit.addEventListener('contextmenu', e => { e.preventDefault(); deleteLine(line.id); });
+      g.appendChild(hit);
+
+      if (isSel) {
+        g.appendChild(makeEl('path', {
+          d: d, fill: 'none', stroke: color, 'stroke-width': 14,
+          'stroke-opacity': '0.25', 'pointer-events': 'none'
+        }));
+      }
+      const visAttrs = {
+        d: d, fill: 'none', stroke: isSel ? '#000' : color,
+        'stroke-width': isSel ? 3 : 1.8, 'stroke-linecap': 'round',
+        'marker-end': 'url(#arrow-' + line.color + ')',
+        'pointer-events': 'none'
+      };
+      if (kind === 'curve') visAttrs['stroke-dasharray'] = '8 6';
+      g.appendChild(makeEl('path', visAttrs));
+      linesLayer.appendChild(g);
+    });
+
+    // 文字
+    for (const key in state.texts) {
+      const t = state.texts[key];
+      const [r, c] = key.split(',').map(Number);
+      const gx = gridX(c), gy = gridY(r), cx = gx + CELL / 2;
+
+      if (t.tianGan) {
+        textsLayer.appendChild(makeEl('text', {
+          x: gx + 6, y: gy + 122, 'font-size': FONT, 'font-weight': 'bold',
+          fill: '#1a1a1a', 'text-anchor': 'start', 'font-family': FONT_FAMILY
+        })).textContent = t.tianGan;
+      }
+      if (t.gongMing) {
+        // 宫位名三层：第一个在最底层，后续往上，最多三层；字号逐层减小，第二层加细下划线
+        const mingList = (t.gongMing || '').split(/[,，、]/).map(s => s.trim()).filter(Boolean).slice(0, 3);
+        const MING_GAP = 22;
+        const MING_SIZES = [17, 15, 13];
+        mingList.forEach((ming, i) => {
+          const fs = MING_SIZES[i] || 11;
+          const y = gy + 144 - i * MING_GAP;
+          textsLayer.appendChild(makeEl('text', {
+            x: cx, y: y,
+            'font-size': fs, 'font-weight': 'bold',
+            fill: '#1a1a1a', 'text-anchor': 'middle', 'font-family': FONT_FAMILY
+          })).textContent = ming;
+          if (i === 1) {
+            const halfW = Array.from(ming).length * fs / 2;
+            textsLayer.appendChild(makeEl('line', {
+              x1: cx - halfW, y1: y + 3, x2: cx + halfW, y2: y + 3,
+              stroke: '#1a1a1a', 'stroke-width': 1
+            }));
+          }
+        });
+      }
+      if (t.xingYao || t.siHua) {
+        // 多个星曜：按逗号分隔，从左至右排列，各自竖排（方向不变）；四化对应各星曜（空格跳过）
+        const xingList = (t.xingYao || '').split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+        const huaList = (t.siHua || '').split(/[,，、]/).map(s => s.trim());
+        const COL_GAP = 20;
+        const ROW_GAP = 20;
+        const huaMap = { '禄': 'lu', '权': 'quan', '科': 'ke', '忌': 'ji' };
+        if (xingList.length > 0) {
+          xingList.forEach((xing, i) => {
+            const chars = Array.from(xing);
+            chars.forEach((ch, j) => {
+              textsLayer.appendChild(makeEl('text', {
+                x: gx + 6 + i * COL_GAP, y: gy + 20 + j * ROW_GAP,
+                'font-size': FONT, 'font-weight': 'bold', fill: '#333', 'text-anchor': 'start', 'font-family': FONT_FAMILY
+              })).textContent = ch;
+            });
+            // 四化：跟在对应星曜下面（空格/空 = 该星曜无四化）
+            const huaKey = huaMap[huaList[i] || ''];
+            if (huaKey) {
+              textsLayer.appendChild(makeEl('text', {
+                x: gx + 6 + i * COL_GAP, y: gy + 20 + chars.length * ROW_GAP + 8,
+                'font-size': FONT, 'font-weight': 'bold', fill: COLORS[huaKey].hex,
+                'text-anchor': 'start', 'font-family': FONT_FAMILY
+              })).textContent = COLORS[huaKey].name;
+            }
+          });
+        } else {
+          // 无星曜（单独自化）：四化从左到右显示在左上角，稍往下不贴边
+          const validHua = huaList.filter(s => huaMap[s]);
+          validHua.forEach((hua, i) => {
+            const key = huaMap[hua];
+            textsLayer.appendChild(makeEl('text', {
+              x: gx + 6 + i * COL_GAP, y: gy + 26,
+              'font-size': FONT, 'font-weight': 'bold', fill: COLORS[key].hex,
+              'text-anchor': 'start', 'font-family': FONT_FAMILY
+            })).textContent = COLORS[key].name;
+          });
+        }
+      }
+      if (t.laiYin) {
+        // 来因宫：右下角竖排“来因”二字，红字，圆角方框
+        const bx = gx + CELL - 30, by = gy + CELL - 50;
+        textsLayer.appendChild(makeEl('rect', {
+          x: bx, y: by, width: 22, height: 42, rx: 6,
+          fill: 'none', stroke: '#D32F2F', 'stroke-width': 1.2
+        }));
+        const mx = bx + 11;
+        textsLayer.appendChild(makeEl('text', {
+          x: mx, y: by + 16, 'font-size': 15, 'font-weight': 'bold',
+          fill: '#D32F2F', 'text-anchor': 'middle', 'font-family': FONT_FAMILY
+        })).textContent = '来';
+        textsLayer.appendChild(makeEl('text', {
+          x: mx, y: by + 35, 'font-size': 15, 'font-weight': 'bold',
+          fill: '#D32F2F', 'text-anchor': 'middle', 'font-family': FONT_FAMILY
+        })).textContent = '因';
+      }
+    }
+    persist();
+  }
+
+  /* ============ 自动保存 / 恢复（主通道：地址 hash，副通道：localStorage） ============ */
+  function persist() {
+    let json;
+    try {
+      json = JSON.stringify({ v: 1, nextId: state.nextId, lines: state.lines, texts: state.texts, currentColor: currentColor });
+    } catch (e) { return; }
+    const enc = 'v1=' + encodeURIComponent(json);
+    if (location.hash === '#' + enc) return;
+    try {
+      location.replace('#' + enc);
+    } catch (e) {
+      try { location.hash = enc; } catch (e2) {}
+    }
+    try { localStorage.setItem('mingpan-sketch', json); } catch (e) {}
+  }
+
+  function restore() {
+    let data = null;
+    const raw = location.hash ? location.hash.slice(1) : '';
+    if (raw.indexOf('v1=') === 0) {
+      try { data = JSON.parse(decodeURIComponent(raw.slice(3))); } catch (e) { data = null; }
+    }
+    if (!data) {
+      try {
+        const s = localStorage.getItem('mingpan-sketch');
+        if (s) data = JSON.parse(s);
+      } catch (e) {}
+    }
+    if (!data) return;
+    if (Array.isArray(data.lines)) state.lines = data.lines;
+    if (data.texts && typeof data.texts === 'object') state.texts = data.texts;
+    if (typeof data.nextId === 'number' && data.nextId > state.nextId) state.nextId = data.nextId;
+    if (data.currentColor && COLORS[data.currentColor]) {
+      currentColor = data.currentColor;
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.toggle('active', b.dataset.color === currentColor));
+    }
+  }
+
+  /* ============ 坐标工具 ============ */
+  function toSvgPoint(e) {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+  function cellAt(x, y) {
+    if (x < MARGIN || x > MARGIN + SIZE || y < MARGIN || y > MARGIN + SIZE) return null;
+    const c = Math.floor((x - MARGIN) / CELL);
+    const r = Math.floor((y - MARGIN) / CELL);
+    if (r >= 1 && r <= 2 && c >= 1 && c <= 2) return null;
+    return { r, c };
+  }
+
+  /* ============ 画线交互（pointer 事件，同时支持鼠标与触控笔/手指） ============ */
+  let drawing = null;
+  svg.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    svg.setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e);
+    const cell = cellAt(p.x, p.y);
+    if (!cell) { selectLine(null); return; }
+    const [sx, sy] = anchorCenter(cell.r, cell.c, 'out');
+    drawing = { r: cell.r, c: cell.c, sx, sy, dragging: false };
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    const p = toSvgPoint(e);
+    if (!drawing.dragging) {
+      const dx = p.x - drawing.sx, dy = p.y - drawing.sy;
+      if (Math.hypot(dx, dy) > 6) drawing.dragging = true;
+      else return;
+    }
+    drawPreview(p.x, p.y);
+  });
+  svg.addEventListener('pointerup', e => {
+    if (!drawing) return;
+    const p = toSvgPoint(e);
+    const d = drawing;
+    drawing = null;
+    clearPreview();
+    if (!d.dragging) { openPanel(d.r, d.c); return; }
+    const cell = cellAt(p.x, p.y);
+    if (cell) {
+      if (cell.r === d.r && cell.c === d.c) return;
+      addLine(d.r, d.c, 'palace', [cell.r, cell.c], null);
+    } else {
+      addLine(d.r, d.c, 'outside', null, [p.x, p.y]);
+    }
+  });
+  svg.addEventListener('pointercancel', () => {
+    drawing = null;
+    clearPreview();
+  });
+
+  function addLine(fr, fc, toType, toPalace, toPoint) {
+    pushUndo();
+    const id = 'L' + (state.nextId++);
+    state.lines.push({ id, color: currentColor, from: [fr, fc], toType, toPalace, toPoint });
+    render();
+  }
+  function drawPreview(x, y) {
+    clearPreview();
+    const inside = x >= MARGIN && x <= MARGIN + SIZE && y >= MARGIN && y <= MARGIN + SIZE;
+    const [sx, sy] = anchorCenter(drawing.r, drawing.c, inside ? 'out' : 'in');
+    previewLayer.appendChild(makeEl('line', {
+      x1: sx, y1: sy, x2: x, y2: y,
+      stroke: COLORS[currentColor].hex, 'stroke-width': 2.4,
+      'stroke-dasharray': '6 4', fill: 'none'
+    }));
+  }
+  function clearPreview() {
+    while (previewLayer.firstChild) previewLayer.removeChild(previewLayer.firstChild);
+  }
+
+  /* ============ 选中 / 删除 ============ */
+  function selectLine(id) { selectedLineId = id; render(); }
+  function deleteLine(id) {
+    pushUndo();
+    state.lines = state.lines.filter(l => l.id !== id);
+    selectedLineId = null;
+    render();
+  }
+  document.getElementById('btn-delete').addEventListener('click', () => {
+    if (!selectedLineId) { alert('请先点击一条线选中它，再删除。'); return; }
+    deleteLine(selectedLineId);
+  });
+  document.addEventListener('keydown', e => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId && tag !== 'INPUT' && tag !== 'SELECT') {
+      e.preventDefault(); deleteLine(selectedLineId);
+    }
+  });
+
+  /* ============ 输入面板 ============ */
+  let panelBranch = null;
+  const mask = document.getElementById('panel-mask');
+  function openPanel(r, c) {
+    panelBranch = r + ',' + c;
+    document.getElementById('panel-branch').textContent = BRANCH[panelBranch];
+    const t = state.texts[panelBranch] || {};
+    const sel = document.getElementById('in-gan');
+    const opts = ganOptions(BRANCH[panelBranch]);
+    sel.innerHTML = '<option value="">（未定）</option>' + opts.map(g => '<option value="' + g + '">' + g + '</option>').join('');
+    sel.value = t.tianGan || '';
+    document.getElementById('in-ming').value = t.gongMing || '';
+    document.getElementById('in-xing').value = t.xingYao || '';
+    document.getElementById('in-hua').value = t.siHua || '';
+    document.getElementById('in-laiyin').checked = !!t.laiYin;
+    mask.classList.add('show');
+    document.getElementById('in-gan').focus();
+  }
+  function closePanel() { mask.classList.remove('show'); panelBranch = null; }
+  function savePanel(clearAll) {
+    if (!panelBranch) return;
+    pushUndo();
+    if (clearAll) {
+      clearTianGanAll();
+      delete state.texts[panelBranch];
+    } else {
+      const gan = document.getElementById('in-gan').value.trim();
+      const ming = document.getElementById('in-ming').value.trim();
+      const xing = document.getElementById('in-xing').value.trim();
+      const hua = document.getElementById('in-hua').value;
+      const laiYin = document.getElementById('in-laiyin').checked;
+      // 天干联动：非空 → 反推整盘 12 宫；空 → 清空整盘天干
+      if (gan) applyTianGan(panelBranch, gan);
+      else clearTianGanAll();
+      let entry = state.texts[panelBranch];
+      if (!entry) entry = state.texts[panelBranch] = {};
+      entry.gongMing = ming;
+      entry.xingYao = xing;
+      entry.siHua = hua;
+      if (laiYin) entry.laiYin = true; else delete entry.laiYin;
+      if (!entry.tianGan && !entry.gongMing && !entry.xingYao && !entry.siHua && !entry.laiYin) {
+        delete state.texts[panelBranch];
+      }
+    }
+    render(); closePanel();
+  }
+  document.getElementById('btn-ok').addEventListener('click', () => savePanel(false));
+  document.getElementById('btn-clear-gong').addEventListener('click', () => savePanel(true));
+  document.getElementById('btn-cancel').addEventListener('click', closePanel);
+  mask.addEventListener('click', e => { if (e.target === mask) closePanel(); });
+  document.getElementById('panel').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); savePanel(false); }
+    if (e.key === 'Escape') closePanel();
+  });
+
+  /* ============ 工具栏 ============ */
+  document.querySelectorAll('.color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentColor = btn.dataset.color;
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+  document.getElementById('btn-undo').addEventListener('click', undo);
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    if (state.lines.length === 0 && Object.keys(state.texts).length === 0) return;
+    state.lines = [];
+    state.texts = {};
+    undoStack = [];
+    selectedLineId = null;
+    render();
+  });
+
+  /* ============ 导出 ============ */
+  // 生成 PNG（公共），生成后回调 dataUrl
+  function generatePNG(callback) {
+    const savedSel = selectedLineId;
+    selectedLineId = null; render();
+
+    const pad = 15;
+    let minX = MARGIN, minY = MARGIN, maxX = MARGIN + SIZE, maxY = MARGIN + SIZE;
+    const lb = linesLayer.getBBox();
+    const tb = textsLayer.getBBox();
+    if (lb.width > 0) { minX = Math.min(minX, lb.x); minY = Math.min(minY, lb.y); maxX = Math.max(maxX, lb.x + lb.width); maxY = Math.max(maxY, lb.y + lb.height); }
+    if (tb.width > 0) { minX = Math.min(minX, tb.x); minY = Math.min(minY, tb.y); maxX = Math.max(maxX, tb.x + tb.width); maxY = Math.max(maxY, tb.y + tb.height); }
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const w = maxX - minX, h = maxY - minY;
+
+    const xml = new XMLSerializer().serializeToString(svg);
+    const svg64 = btoa(unescape(encodeURIComponent(xml)));
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, minX, minY, w, h, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/png');
+      selectedLineId = savedSel; render();
+      callback(dataUrl);
+    };
+    img.src = 'data:image/svg+xml;base64,' + svg64;
+  }
+
+  // 导出图片：弹浮层，长按保存到相册（iPad 用）
+  document.getElementById('btn-export').addEventListener('click', () => {
+    generatePNG(dataUrl => {
+      document.getElementById('export-img').src = dataUrl;
+      document.getElementById('export-mask').classList.add('show');
+    });
+  });
+
+  // 下载图片：直接下载到浏览器默认文件夹（Mac 用）
+  document.getElementById('btn-download').addEventListener('click', () => {
+    generatePNG(dataUrl => {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = '命盘草图_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
+      a.click();
+    });
+  });
+
+  document.getElementById('export-close').addEventListener('click', () => {
+    document.getElementById('export-mask').classList.remove('show');
+  });
+  document.getElementById('export-mask').addEventListener('click', e => {
+    if (e.target === document.getElementById('export-mask')) {
+      document.getElementById('export-mask').classList.remove('show');
+    }
+  });
+
+  initBoard();
+  restore();
+  render();
+})();
+</script>
+</body>
+</html>
